@@ -1,5 +1,7 @@
 # Cloudflare Self-Hosting
 
+> Atualizado: 2026-09-07 09:37 BRT
+
 Host OpenSEO on Cloudflare for internet-facing self-hosting across multiple devices or with your team. One deploy command provisions everything, including the Cloudflare Access login gate. Works on Cloudflare's free plan.
 
 Related guides:
@@ -57,6 +59,8 @@ pnpm deploy:selfhost --yes
 ```
 
 This provisions the D1 database, KV namespaces, and R2 bucket, applies the database migrations, deploys the Workers, and creates the Cloudflare Access application protecting it (allowing exactly `ACCESS_ALLOWED_EMAILS`). If the account has no Zero Trust team yet, one is created for you, named after your workers.dev subdomain.
+
+Set `SELFHOST_DOMAIN` to a hostname in a zone managed by the same Cloudflare account to provision that custom Worker domain and protect it with the same Access application.
 
 To manage the Access application yourself instead, set `TEAM_DOMAIN` (`https://your-team.cloudflareaccess.com`) and `POLICY_AUD` (the application's audience tag) in `.env.selfhost` — the deploy then provisions no Access resources.
 

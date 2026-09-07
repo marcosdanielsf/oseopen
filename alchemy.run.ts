@@ -21,6 +21,7 @@ import {
 // boundary depends on. The shell copy in .github/workflows/pr-preview.yml
 // must be kept in sync by hand.
 
+// Atualizado: 2026-09-07 09:37 BRT
 // Alchemy v2 stack for SaaS deployments — previews, prod, and Cloudflare
 // self-hosting. Stage semantics, security model, and credentials are
 // documented once in docs/PREVIEW_DEPLOYMENTS.md.
@@ -175,6 +176,7 @@ const resolveSelfHostAccess = (
   stage: string,
   provision: boolean,
   workersSubdomain: string,
+  accessDomain?: string,
 ) =>
   Effect.gen(function* () {
     let teamDomain = yield* optionalVar("TEAM_DOMAIN");
@@ -249,7 +251,7 @@ const resolveSelfHostAccess = (
         applicationId: "SelfHostAccess",
         policyName: `open-seo ${stage} self-host users`,
         applicationName: `open-seo ${stage}`,
-        domain: `${workerName(stage)}.${subdomain}`,
+        domain: accessDomain || `${workerName(stage)}.${subdomain}`,
         emails: allowedEmails,
       });
       policyAud = application.aud;
@@ -315,6 +317,7 @@ export default Alchemy.Stack(
     );
     const databaseProvider = yield* optionalVar("DATABASE_PROVIDER");
     const workersSubdomain = yield* readWorkersSubdomain({ required: false });
+    const selfHostDomain = yield* optionalVar("SELFHOST_DOMAIN");
 
     // Auth needs an absolute BETTER_AUTH_URL. Prod sets it explicitly;
     // previews always derive it from the deterministic worker name — a wrong
@@ -356,6 +359,7 @@ export default Alchemy.Stack(
       stage,
       authMode === "cloudflare_access" && !prod,
       workersSubdomain,
+      selfHostDomain,
     );
 
     // Created once and bound into BOTH workers — they share the same
@@ -423,7 +427,11 @@ export default Alchemy.Stack(
     const app = yield* Cloudflare.Worker("open-seo", {
       name: workerName(stage),
       // Prod serves the real domains; the zone is inferred from the hostname.
-      domain: prod ? ["app.openseo.so", "www.app.openseo.so"] : undefined,
+      domain: prod
+        ? ["app.openseo.so", "www.app.openseo.so"]
+        : selfHostDomain
+          ? [selfHostDomain]
+          : undefined,
       // Prebuilt worker from `vite build` (@cloudflare/vite-plugin). The entry
       // exports the DO + WorkflowEntrypoint classes (re-exported by
       // src/server.ts), which `bundle: false` requires. Sibling chunks under
