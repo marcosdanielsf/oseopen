@@ -7,16 +7,19 @@ import {
   formatCtr,
   formatPosition,
 } from "@/client/features/search-performance/SearchPerformanceColumns";
+import {
+  criticalPages,
+  percentDelta,
+  SearchCells,
+  TotalCard,
+} from "@/client/features/portfolio/PortfolioParts";
 import { CreateProjectModal } from "@/client/features/projects/CreateProjectModal";
 import { getStandardErrorMessage } from "@/client/lib/error-messages";
 import {
   getPortfolioOverview,
   getPortfolioSearchTotals,
 } from "@/serverFunctions/portfolio";
-import type {
-  PortfolioProjectRow,
-  PortfolioSearchRow,
-} from "@/server/features/portfolio/services/PortfolioService";
+import type { PortfolioSearchRow } from "@/server/features/portfolio/services/PortfolioService";
 import {
   SEARCH_PERFORMANCE_RANGES,
   type SearchPerformanceDateRange,
@@ -27,130 +30,6 @@ const RANGE_LABELS: Record<SearchPerformanceDateRange, string> = {
   last_28_days: "28 days",
   last_3_months: "3 months",
 };
-
-const SEARCH_STATUS_LABELS: Record<PortfolioSearchRow["status"], string> = {
-  ok: "",
-  not_connected: "Search Console not connected",
-  rate_limited: "Rate limited, retry shortly",
-  error: "Unavailable",
-};
-
-type Delta = { text: string; improved: boolean } | null;
-
-function percentDelta(current: number, previous: number): Delta {
-  if (previous <= 0) return null;
-  const change = (current - previous) / previous;
-  return {
-    text: `${change >= 0 ? "+" : ""}${(change * 100).toFixed(1)}%`,
-    improved: change >= 0,
-  };
-}
-
-/** Position falls as rankings improve, so the delta is inverted. */
-function positionDelta(current: number, previous: number): Delta {
-  if (previous <= 0 || current <= 0) return null;
-  const change = previous - current;
-  return {
-    text: `${change >= 0 ? "+" : ""}${change.toFixed(1)}`,
-    improved: change >= 0,
-  };
-}
-
-function DeltaTag({ delta }: { delta: Delta }) {
-  if (!delta) return null;
-  return (
-    <span
-      className={`ml-1 text-xs ${delta.improved ? "text-success" : "text-error"}`}
-    >
-      {delta.text}
-    </span>
-  );
-}
-
-function TotalCard({
-  label,
-  value,
-  delta,
-  hint,
-}: {
-  label: string;
-  value: string;
-  delta?: Delta;
-  hint?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-base-300 bg-base-100 p-4">
-      <div className="text-xs uppercase tracking-wider text-base-content/50">
-        {label}
-      </div>
-      <div className="mt-1 flex items-baseline">
-        <span className="text-2xl font-semibold tabular-nums">{value}</span>
-        {delta ? <DeltaTag delta={delta} /> : null}
-      </div>
-      {hint ? (
-        <div className="mt-1 text-xs text-base-content/50">{hint}</div>
-      ) : null}
-    </div>
-  );
-}
-
-/** Pages hit by the critical issue types in the project's latest audit. */
-function criticalPages(project: PortfolioProjectRow): number {
-  if (!project.audit) return 0;
-  return project.audit.topIssues
-    .filter((issue) => issue.severity === "critical")
-    .reduce((sum, issue) => sum + issue.count, 0);
-}
-
-function SearchCells({
-  row,
-  loading,
-}: {
-  row: PortfolioSearchRow | undefined;
-  loading: boolean;
-}) {
-  if (loading && !row) {
-    return (
-      <>
-        {[0, 1, 2, 3].map((cell) => (
-          <td key={cell} className="text-right">
-            <span className="inline-block h-3 w-10 animate-pulse rounded bg-base-300" />
-          </td>
-        ))}
-      </>
-    );
-  }
-
-  if (!row || row.status !== "ok" || !row.current || !row.previous) {
-    const label = SEARCH_STATUS_LABELS[row?.status ?? "not_connected"];
-    return (
-      <td colSpan={4} className="text-right text-xs text-base-content/40">
-        {label}
-      </td>
-    );
-  }
-
-  const { current, previous } = row;
-  return (
-    <>
-      <td className="text-right tabular-nums">
-        {formatCount(current.clicks)}
-        <DeltaTag delta={percentDelta(current.clicks, previous.clicks)} />
-      </td>
-      <td className="text-right tabular-nums">
-        {formatCount(current.impressions)}
-        <DeltaTag
-          delta={percentDelta(current.impressions, previous.impressions)}
-        />
-      </td>
-      <td className="text-right tabular-nums">{formatCtr(current.ctr)}</td>
-      <td className="text-right tabular-nums">
-        {formatPosition(current.position)}
-        <DeltaTag delta={positionDelta(current.position, previous.position)} />
-      </td>
-    </>
-  );
-}
 
 export function PortfolioPage() {
   const [range, setRange] =
@@ -179,8 +58,34 @@ export function PortfolioPage() {
   }, [searchQuery.data]);
 
   const projects = overviewQuery.data?.projects ?? [];
+
+  // A property connected to two projects makes both rows show identical
+  // numbers, which reads as a bug until the row says why.
+  const sharedProperties = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const project of overviewQuery.data?.projects ?? []) {
+      if (!project.gsc.siteUrl) continue;
+      counts.set(
+        project.gsc.siteUrl,
+        (counts.get(project.gsc.siteUrl) ?? 0) + 1,
+      );
+    }
+    return new Set(
+      [...counts.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([siteUrl]) => siteUrl),
+    );
+  }, [overviewQuery.data]);
   const totals = overviewQuery.data?.totals;
   const searchTotals = searchQuery.data?.totals ?? null;
+
+  // Both Search Console cards are deduplicated by property, so both say so.
+  const dedupHint = totals
+    ? `${totals.gscConnected}/${totals.projects} connected` +
+      (sharedProperties.size > 0
+        ? ", shared properties counted once"
+        : " to Search Console")
+    : undefined;
 
   return (
     <div className="h-full overflow-auto bg-base-100 px-4 py-8 pb-24 md:px-6 md:py-10 md:pb-8">
@@ -240,11 +145,7 @@ export function PortfolioPage() {
                   )
                 : null
             }
-            hint={
-              totals
-                ? `${totals.gscConnected}/${totals.projects} connected to Search Console`
-                : undefined
-            }
+            hint={dedupHint}
           />
           <TotalCard
             label="Impressions"
@@ -259,6 +160,7 @@ export function PortfolioPage() {
                   )
                 : null
             }
+            hint={dedupHint}
           />
           <TotalCard
             label="Keywords in top 10"
@@ -272,11 +174,7 @@ export function PortfolioPage() {
           <TotalCard
             label="Critical audit pages"
             value={totals ? formatCount(totals.criticalIssuePages) : "—"}
-            hint={
-              totals?.referringDomains != null
-                ? `${formatCount(totals.referringDomains)} referring domains`
-                : undefined
-            }
+            hint={totals ? `across ${totals.projects} projects` : undefined}
           />
         </div>
 
@@ -330,6 +228,19 @@ export function PortfolioPage() {
                         ? project.error
                         : (project.domain ?? "No domain set")}
                     </div>
+                    {project.gsc.siteUrl ? (
+                      <div className="text-xs text-base-content/40">
+                        {project.gsc.siteUrl}
+                        {sharedProperties.has(project.gsc.siteUrl) ? (
+                          <span
+                            className="ml-1 text-warning"
+                            title="Another project is connected to this same property, so both rows show the same numbers."
+                          >
+                            shared
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </td>
                   <SearchCells
                     row={searchByProject.get(project.id)}
@@ -354,6 +265,56 @@ export function PortfolioPage() {
                 </tr>
               ))}
             </tbody>
+            {projects.length > 0 ? (
+              // The carteira totals sit under the columns they sum, which is
+              // also where the property dedup is visible: these clicks and
+              // impressions are lower than the column adds up to whenever two
+              // projects share one property.
+              <tfoot>
+                <tr className="border-t border-base-300 font-medium">
+                  <td>
+                    Total
+                    {sharedProperties.size > 0 ? (
+                      <div className="text-xs font-normal text-base-content/50">
+                        shared properties counted once
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {searchTotals
+                      ? formatCount(searchTotals.current.clicks)
+                      : "—"}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {searchTotals
+                      ? formatCount(searchTotals.current.impressions)
+                      : "—"}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {searchTotals ? formatCtr(searchTotals.current.ctr) : "—"}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {searchTotals
+                      ? formatPosition(searchTotals.current.position)
+                      : "—"}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {totals ? formatCount(totals.top10) : "—"}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {totals ? formatCount(totals.trackedKeywords) : "—"}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {totals ? formatCount(totals.criticalIssuePages) : "—"}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {totals?.referringDomains != null
+                      ? formatCount(totals.referringDomains)
+                      : "—"}
+                  </td>
+                </tr>
+              </tfoot>
+            ) : null}
           </table>
         </div>
       </div>
