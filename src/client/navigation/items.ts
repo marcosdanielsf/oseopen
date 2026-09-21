@@ -1,6 +1,7 @@
 import {
   Bookmark,
   Bot,
+  Layers,
   ClipboardCheck,
   Globe,
   LayoutDashboard,
@@ -74,6 +75,18 @@ const aiNavItem = linkOptions({
   label: "AI & MCP",
   icon: Bot,
 });
+
+const portfolioNavItem = linkOptions({
+  to: "/portfolio" as const,
+  label: "All projects",
+  icon: Layers,
+});
+
+// Org-scoped: every project at once, above the active project's own groups.
+export const portfolioNavGroup = {
+  label: "Organization",
+  items: [portfolioNavItem],
+};
 
 // Always-visible sidebar group (not project-scoped, unlike the groups below).
 export const connectNavGroup = {
