@@ -6,7 +6,9 @@ import {
   isExpectedGrantFailure,
 } from "@/server/features/gsc/services/GscService";
 import { resolveDateRange } from "@/server/features/gsc/searchAnalytics";
+import { GscApiError } from "@/server/lib/gscClient";
 import {
+  DAILY_ROW_LIMIT,
   previousPeriod,
   sumSearchTotals,
 } from "@/server/features/gsc/searchPerformanceReport";
@@ -22,9 +24,7 @@ type SearchTotals = ReturnType<typeof sumSearchTotals>;
 // dozens of projects doesn't open dozens of D1/GSC calls at once.
 const PROJECT_CONCURRENCY = 6;
 // Totals come from the daily breakdown: buildSearchAnalyticsRequest rewrites an
-// empty `dimensions` to ["query"], which would total only the top query. One
-// row per day, and the longest offered range is ~92 days.
-const DAILY_ROW_LIMIT = 200;
+// empty `dimensions` to ["query"], which would total only the top query.
 
 export type PortfolioProjectRow = {
   id: string;
@@ -58,7 +58,7 @@ export type PortfolioOverview = {
 
 export type PortfolioSearchRow = {
   projectId: string;
-  status: "ok" | "not_connected" | "error";
+  status: "ok" | "not_connected" | "rate_limited" | "error";
   siteUrl: string | null;
   current: SearchTotals | null;
   previous: SearchTotals | null;
@@ -194,19 +194,37 @@ async function getOverview(input: {
           error: null,
         };
       } catch (error) {
+        // The detail belongs in the log, not on the client: this string is
+        // rendered verbatim in the project's row.
+        console.error("Portfolio summary failed", {
+          projectId: project.id,
+          error,
+        });
         return {
           ...base,
           gsc: { connected: false, siteUrl: null },
           rank: null,
           audit: null,
           backlinks: null,
-          error: error instanceof Error ? error.message : "Summary failed",
+          error: "Summary unavailable",
         };
       }
     },
   );
 
   return { projects: rows, totals: summarize(rows) };
+}
+
+/** A 429 is the fan-out's own doing (one call pair per connected project, no
+ *  cache in GscService), so the row says "retry" instead of "failed". */
+function searchRowStatus(error: unknown): PortfolioSearchRow["status"] {
+  if (error instanceof GscNotConnectedError || isExpectedGrantFailure(error)) {
+    return "not_connected";
+  }
+  if (error instanceof GscApiError && error.status === 429) {
+    return "rate_limited";
+  }
+  return "error";
 }
 
 /**
@@ -254,12 +272,9 @@ async function getSearchTotals(input: {
           previous: sumSearchTotals(previous.rows),
         };
       } catch (error) {
-        const expected =
-          error instanceof GscNotConnectedError ||
-          isExpectedGrantFailure(error);
         return {
           projectId: project.id,
-          status: expected ? "not_connected" : "error",
+          status: searchRowStatus(error),
           siteUrl: null,
           current: null,
           previous: null,

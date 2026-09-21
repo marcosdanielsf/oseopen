@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 class FakeGscNotConnectedError extends Error {}
+class FakeGscApiError extends Error {
+  constructor(readonly status: number) {
+    super(`gsc ${status}`);
+  }
+}
 
 vi.mock("@/server/features/projects/services/ProjectService", () => ({
   ProjectService: { listProjects: mocks.listProjects },
@@ -25,6 +30,10 @@ vi.mock("@/server/features/gsc/services/GscService", () => ({
   GscService: { getPerformance: mocks.getPerformance },
   GscNotConnectedError: FakeGscNotConnectedError,
   isExpectedGrantFailure: () => false,
+}));
+
+vi.mock("@/server/lib/gscClient", () => ({
+  GscApiError: FakeGscApiError,
 }));
 
 const projectA = { id: "project_a", name: "Acme", domain: "acme.com" };
@@ -97,6 +106,35 @@ describe("PortfolioService.getOverview", () => {
     expect(result.totals.criticalIssuePages).toBe(7);
   });
 
+  it("keeps the input order when there are more projects than workers", async () => {
+    // PROJECT_CONCURRENCY is 6; ten projects exercise the pool's reuse.
+    const many = Array.from({ length: 10 }, (_, index) => ({
+      id: `project_${index}`,
+      name: `Project ${index}`,
+      domain: `p${index}.com`,
+    }));
+    mocks.listProjects.mockResolvedValue(many);
+    mocks.getConnectionByProjectId.mockResolvedValue(null);
+    mocks.getOverview.mockImplementation(
+      async ({ projectId }: { projectId: string }) => {
+        const index = Number(projectId.replace("project_", ""));
+        // Later projects resolve first, so the order can only come from the
+        // indexed writes, not from completion order.
+        await new Promise((resolve) => setTimeout(resolve, (10 - index) % 5));
+        return overview(index, 0);
+      },
+    );
+
+    const result = await (
+      await loadService()
+    ).getOverview({ organizationId: "org_1" });
+
+    expect(result.projects.map((row) => row.id)).toEqual(
+      many.map((project) => project.id),
+    );
+    expect(result.totals.top10).toBe(45);
+  });
+
   it("keeps the other rows when one project's summary throws", async () => {
     mocks.listProjects.mockResolvedValue([projectA, projectB]);
     mocks.getOverview
@@ -110,7 +148,8 @@ describe("PortfolioService.getOverview", () => {
       organizationId: "org_1",
     });
 
-    expect(result.projects[0].error).toBe("d1 timeout");
+    // The driver message stays in the log; the row carries a generic label.
+    expect(result.projects[0].error).toBe("Summary unavailable");
     expect(result.projects[0].rank).toBeNull();
     expect(result.projects[1].error).toBeNull();
     expect(result.totals.top10).toBe(4);
@@ -154,6 +193,20 @@ describe("PortfolioService.getSearchTotals", () => {
     expect(globex?.current).toBeNull();
     expect(result.totals?.current.clicks).toBe(10);
     expect(result.totals?.current.position).toBe(5);
+  });
+
+  it("marks a rate-limited project as retryable instead of failed", async () => {
+    mocks.listProjects.mockResolvedValue([projectA]);
+    mocks.getPerformance.mockRejectedValue(new FakeGscApiError(429));
+
+    const result = await (
+      await loadService()
+    ).getSearchTotals({
+      organizationId: "org_1",
+      dateRange: "last_28_days",
+    });
+
+    expect(result.projects[0].status).toBe("rate_limited");
   });
 
   it("reports no totals when no project answers", async () => {

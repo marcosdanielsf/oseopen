@@ -10,6 +10,7 @@ import {
 } from "@/server/features/gsc/searchAnalytics";
 import {
   buildStrikingDistanceRows,
+  DAILY_ROW_LIMIT,
   previousPeriod,
   sumSearchTotals,
   toDimensionRows,
@@ -23,8 +24,6 @@ import {
 
 // query x page fan-out needs more rows to find the 5..20 band.
 const STRIKING_DISTANCE_FETCH_LIMIT = 1000;
-// dimensions:["date"] returns one row per day; the longest range is ~92 days.
-const DAILY_ROW_LIMIT = 200;
 const COUNTRY_ROW_LIMIT = 25;
 // Export pulls the whole dimension in one shot, capped at GSC's per-call max
 // (GSC_MAX_ROW_LIMIT). Large stores get everything up to this ceiling.

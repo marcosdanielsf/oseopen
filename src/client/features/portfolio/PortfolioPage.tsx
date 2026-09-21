@@ -28,6 +28,13 @@ const RANGE_LABELS: Record<SearchPerformanceDateRange, string> = {
   last_3_months: "3 months",
 };
 
+const SEARCH_STATUS_LABELS: Record<PortfolioSearchRow["status"], string> = {
+  ok: "",
+  not_connected: "Search Console not connected",
+  rate_limited: "Rate limited, retry shortly",
+  error: "Unavailable",
+};
+
 type Delta = { text: string; improved: boolean } | null;
 
 function percentDelta(current: number, previous: number): Delta {
@@ -115,8 +122,7 @@ function SearchCells({
   }
 
   if (!row || row.status !== "ok" || !row.current || !row.previous) {
-    const label =
-      row?.status === "error" ? "Failed" : "Search Console not connected";
+    const label = SEARCH_STATUS_LABELS[row?.status ?? "not_connected"];
     return (
       <td colSpan={4} className="text-right text-xs text-base-content/40">
         {label}

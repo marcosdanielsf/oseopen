@@ -7,6 +7,11 @@ import type { GscSearchAnalyticsRow } from "@/server/lib/gscClient";
  * testable without a GSC client.
  */
 
+/** dimensions:["date"] returns one row per day, and the longest offered range
+ *  is ~92 days. Shared by the project page and the portfolio fan-out so both
+ *  total the same window the same way. */
+export const DAILY_ROW_LIMIT = 200;
+
 type SearchPerformanceTotals = {
   clicks: number;
   impressions: number;
