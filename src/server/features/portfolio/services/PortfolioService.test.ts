@@ -209,6 +209,32 @@ describe("PortfolioService.getSearchTotals", () => {
     expect(result.projects[0].status).toBe("rate_limited");
   });
 
+  it("counts a property shared by two projects only once in the totals", async () => {
+    mocks.listProjects.mockResolvedValue([projectA, projectB]);
+    // Both projects connected to the same Search Console property.
+    mocks.getPerformance.mockResolvedValue({
+      siteUrl: "sc-domain:acme.com",
+      connectedBy: null,
+      request: {},
+      rows: [{ clicks: 24, impressions: 371, ctr: 0.065, position: 9.6 }],
+    });
+
+    const result = await (
+      await loadService()
+    ).getSearchTotals({
+      organizationId: "org_1",
+      dateRange: "last_28_days",
+    });
+
+    // Each row still reports its own numbers...
+    expect(result.projects).toHaveLength(2);
+    expect(result.projects[0].current?.clicks).toBe(24);
+    expect(result.projects[1].current?.clicks).toBe(24);
+    // ...but the carteira total is not 48.
+    expect(result.totals?.current.clicks).toBe(24);
+    expect(result.totals?.current.impressions).toBe(371);
+  });
+
   it("reports no totals when no project answers", async () => {
     mocks.listProjects.mockResolvedValue([projectA]);
     mocks.getPerformance.mockRejectedValue(

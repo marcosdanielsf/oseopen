@@ -179,6 +179,24 @@ export function PortfolioPage() {
   }, [searchQuery.data]);
 
   const projects = overviewQuery.data?.projects ?? [];
+
+  // A property connected to two projects makes both rows show identical
+  // numbers, which reads as a bug until the row says why.
+  const sharedProperties = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const project of overviewQuery.data?.projects ?? []) {
+      if (!project.gsc.siteUrl) continue;
+      counts.set(
+        project.gsc.siteUrl,
+        (counts.get(project.gsc.siteUrl) ?? 0) + 1,
+      );
+    }
+    return new Set(
+      [...counts.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([siteUrl]) => siteUrl),
+    );
+  }, [overviewQuery.data]);
   const totals = overviewQuery.data?.totals;
   const searchTotals = searchQuery.data?.totals ?? null;
 
@@ -242,7 +260,10 @@ export function PortfolioPage() {
             }
             hint={
               totals
-                ? `${totals.gscConnected}/${totals.projects} connected to Search Console`
+                ? `${totals.gscConnected}/${totals.projects} connected` +
+                  (sharedProperties.size > 0
+                    ? ", shared properties counted once"
+                    : " to Search Console")
                 : undefined
             }
           />
@@ -274,7 +295,7 @@ export function PortfolioPage() {
             value={totals ? formatCount(totals.criticalIssuePages) : "—"}
             hint={
               totals?.referringDomains != null
-                ? `${formatCount(totals.referringDomains)} referring domains`
+                ? `across ${totals.projects} projects`
                 : undefined
             }
           />
@@ -330,6 +351,19 @@ export function PortfolioPage() {
                         ? project.error
                         : (project.domain ?? "No domain set")}
                     </div>
+                    {project.gsc.siteUrl ? (
+                      <div className="text-xs text-base-content/40">
+                        {project.gsc.siteUrl}
+                        {sharedProperties.has(project.gsc.siteUrl) ? (
+                          <span
+                            className="ml-1 text-warning"
+                            title="Another project is connected to this same property, so both rows show the same numbers."
+                          >
+                            shared
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </td>
                   <SearchCells
                     row={searchByProject.get(project.id)}

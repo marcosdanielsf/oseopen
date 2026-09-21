@@ -283,10 +283,21 @@ async function getSearchTotals(input: {
     },
   );
 
-  const answered = rows.filter(
-    (row): row is AnsweredSearchRow =>
-      row.current !== null && row.previous !== null,
-  );
+  // Two projects can point at the SAME Search Console property (the unique
+  // index is per project, not per property). Summing both would double-count
+  // the carteira, so the totals take each property once.
+  const seenProperties = new Set<string>();
+  const answered = rows
+    .filter(
+      (row): row is AnsweredSearchRow =>
+        row.current !== null && row.previous !== null,
+    )
+    .filter((row) => {
+      const key = row.siteUrl ?? row.projectId;
+      if (seenProperties.has(key)) return false;
+      seenProperties.add(key);
+      return true;
+    });
   const totals = answered.length
     ? answered.reduce(
         (acc, row) => ({
