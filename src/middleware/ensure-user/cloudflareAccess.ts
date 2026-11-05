@@ -6,7 +6,10 @@ import { classifyAccessVerificationError } from "./accessTokenErrors";
 import { resolveSharedWorkspaceContext } from "./delegated";
 import type { EnsuredUserContext } from "./types";
 
-const jwksByTeamDomain = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+const jwksByTeamDomain = new Map<
+  string,
+  ReturnType<typeof createRemoteJWKSet>
+>();
 
 function getJwks(teamDomain: string) {
   const existing = jwksByTeamDomain.get(teamDomain);
@@ -14,7 +17,9 @@ function getJwks(teamDomain: string) {
     return existing;
   }
 
-  const jwks = createRemoteJWKSet(new URL(`${teamDomain}/cdn-cgi/access/certs`));
+  const jwks = createRemoteJWKSet(
+    new URL(`${teamDomain}/cdn-cgi/access/certs`),
+  );
 
   jwksByTeamDomain.set(teamDomain, jwks);
 
@@ -34,11 +39,16 @@ function getValidatedTeamDomain(teamDomain: string) {
 export async function resolveCloudflareAccessContext(
   headers: Headers,
 ): Promise<EnsuredUserContext> {
-  const teamDomain = env.TEAM_DOMAIN ? getValidatedTeamDomain(env.TEAM_DOMAIN) : null;
+  const teamDomain = env.TEAM_DOMAIN
+    ? getValidatedTeamDomain(env.TEAM_DOMAIN)
+    : null;
   const policyAud = env.POLICY_AUD?.trim() || null;
 
   if (!teamDomain || !policyAud) {
-    const missing = [teamDomain ? null : "TEAM_DOMAIN", policyAud ? null : "POLICY_AUD"]
+    const missing = [
+      teamDomain ? null : "TEAM_DOMAIN",
+      policyAud ? null : "POLICY_AUD",
+    ]
       .filter(Boolean)
       .join(" and ");
     throw new AppError(
@@ -79,7 +89,10 @@ export async function resolveCloudflareAccessContext(
 
   const serviceIdentity = getServiceTokenIdentity(payload);
   if (serviceIdentity) {
-    return resolveSharedWorkspaceContext(serviceIdentity.userId, serviceIdentity.userEmail);
+    return resolveSharedWorkspaceContext(
+      serviceIdentity.userId,
+      serviceIdentity.userEmail,
+    );
   }
 
   const userId = typeof payload.sub === "string" ? payload.sub : null;
@@ -102,7 +115,10 @@ export function getServiceTokenIdentity(
   const commonName = payload.common_name;
   // Any non-empty email means a person login; an empty one is treated as absent.
   if (typeof payload.email === "string" && payload.email) return null;
-  if (typeof commonName !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(commonName)) {
+  if (
+    typeof commonName !== "string" ||
+    !/^[A-Za-z0-9._-]{1,128}$/.test(commonName)
+  ) {
     return null;
   }
 
