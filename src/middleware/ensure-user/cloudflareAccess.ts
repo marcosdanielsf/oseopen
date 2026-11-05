@@ -87,6 +87,14 @@ export async function resolveCloudflareAccessContext(
     throw classifyAccessVerificationError(error);
   }
 
+  const serviceIdentity = getServiceTokenIdentity(payload);
+  if (serviceIdentity) {
+    return resolveSharedWorkspaceContext(
+      serviceIdentity.userId,
+      serviceIdentity.userEmail,
+    );
+  }
+
   const userId = typeof payload.sub === "string" ? payload.sub : null;
   const userEmail = typeof payload.email === "string" ? payload.email : null;
 
@@ -95,4 +103,21 @@ export async function resolveCloudflareAccessContext(
   }
 
   return resolveSharedWorkspaceContext(userId, userEmail);
+}
+
+// A Cloudflare Access service token (machine client, e.g. an MCP connector)
+// gets a JWT with `common_name` = its client id and no email. The Access
+// policy that admitted it is still the authorization boundary; the token
+// becomes its own user in the shared workspace, never an existing person.
+export function getServiceTokenIdentity(payload: JWTPayload) {
+  const commonName = payload.common_name;
+  if (typeof payload.email === "string" && payload.email) return null;
+  if (typeof commonName !== "string" || !/^[A-Za-z0-9._-]+$/.test(commonName)) {
+    return null;
+  }
+
+  return {
+    userId: `access-service:${commonName}`,
+    userEmail: `${commonName}@service-token.invalid`,
+  };
 }
