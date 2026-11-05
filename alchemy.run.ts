@@ -253,6 +253,18 @@ const resolveSelfHostAccess = (
       const mcpServiceTokenId = yield* optionalVar(
         "ACCESS_MCP_SERVICE_TOKEN_ID",
       );
+      if (
+        mcpServiceTokenId &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          mcpServiceTokenId,
+        )
+      ) {
+        return yield* Effect.die(
+          new Error(
+            "ACCESS_MCP_SERVICE_TOKEN_ID must be the service token UUID (Zero Trust > Access > Service credentials).",
+          ),
+        );
+      }
       const extraPolicyIds = mcpServiceTokenId
         ? [
             (yield* Cloudflare.Access.Policy("SelfHostMcpPolicy", {
