@@ -20,7 +20,9 @@ const withToken = new Headers({ "cf-access-jwt-assertion": "signed" });
 
 describe("getServiceTokenIdentity", () => {
   it("maps a service token JWT to its own user", () => {
-    expect(getServiceTokenIdentity({ sub: "", common_name: "abc123.access" })).toEqual({
+    expect(
+      getServiceTokenIdentity({ sub: "", common_name: "abc123.access" }),
+    ).toEqual({
       userId: "access-service:abc123.access",
       userEmail: "abc123.access@service-token.invalid",
     });
@@ -58,6 +60,8 @@ describe("resolveCloudflareAccessContext", () => {
   });
 
   it("rejects a name longer than 128 characters", () => {
-    expect(getServiceTokenIdentity({ common_name: "a".repeat(129) })).toBeNull();
+    expect(
+      getServiceTokenIdentity({ common_name: "a".repeat(129) }),
+    ).toBeNull();
   });
 });

@@ -246,6 +246,34 @@ const resolveSelfHostAccess = (
       const allowedEmails = yield* requireAllowedEmails(
         "Set ACCESS_ALLOWED_EMAILS to the comma-separated emails allowed through Cloudflare Access — or set TEAM_DOMAIN and POLICY_AUD to manage the Access application yourself.",
       );
+      // Opt-in machine access (an MCP connector): a service token created once
+      // in the dashboard (its secret is shown only there) is admitted by its
+      // own non_identity policy on this same application, so its JWT keeps
+      // this application's AUD and the policy survives every deploy.
+      const mcpServiceTokenId = yield* optionalVar(
+        "ACCESS_MCP_SERVICE_TOKEN_ID",
+      );
+      if (
+        mcpServiceTokenId &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          mcpServiceTokenId,
+        )
+      ) {
+        return yield* Effect.die(
+          new Error(
+            "ACCESS_MCP_SERVICE_TOKEN_ID must be the service token UUID (Zero Trust > Access > Service credentials).",
+          ),
+        );
+      }
+      const extraPolicyIds = mcpServiceTokenId
+        ? [
+            (yield* Cloudflare.Access.Policy("SelfHostMcpPolicy", {
+              name: `open-seo ${stage} mcp service token`,
+              decision: "non_identity",
+              include: [{ serviceToken: { tokenId: mcpServiceTokenId } }],
+            })).policyId,
+          ]
+        : [];
       const application = yield* emailAccessGate({
         policyId: "SelfHostAllowUsers",
         applicationId: "SelfHostAccess",
@@ -253,6 +281,7 @@ const resolveSelfHostAccess = (
         applicationName: `open-seo ${stage}`,
         domain: accessDomain || `${workerName(stage)}.${subdomain}`,
         emails: allowedEmails,
+        extraPolicyIds,
       });
       policyAud = application.aud;
     }
